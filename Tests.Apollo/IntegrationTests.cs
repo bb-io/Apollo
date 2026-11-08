@@ -48,48 +48,4 @@ public class IntegrationTests
         Assert.IsNotNull(result.Person);
         Assert.AreEqual(expected, result.Person.PersonId);
     }
-    [TestMethod]
-    public async Task EnrichPeople_PreservesMatchedUnmatchedAndDuplicateInputs()
-        => await VerifyBulk(3);
-
-    [TestMethod]
-    public async Task EnrichPeople_SplitsElevenInputsAcrossBatches()
-        => await VerifyBulk(11);
-
-    private static async Task VerifyBulk(int count)
-    {
-        var config = Load();
-        var id = config.Person.GetProperty("PersonId").GetString();
-        var email = config.Person.GetProperty("Email").GetString();
-        var expected = config.Person.GetProperty("ExpectedPersonId").GetString();
-        if (string.IsNullOrWhiteSpace(expected) || (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(email)))
-            Assert.Inconclusive("Configure TestPerson using a known Apollo record, as for the single-person test.");
-        var inputs = Enumerable.Range(0, count).Select(index => new PersonEnrichmentInput
-        {
-            PersonId = index == 0 || index == count - 1 ? id : index.ToString("x24"),
-            Email = index == 0 || index == count - 1 ? email : null,
-            SourceRecordId = $"test-row-{index + 1}"
-        }).ToArray();
-        var result = await new PeopleActions(config.Context).EnrichPeople(new EnrichPeopleRequest { People = inputs });
-        Assert.AreEqual(count, result.RequestedPeople);
-        Assert.AreEqual(count, result.Results.Length);
-        Assert.AreEqual(2, result.MatchedPeople);
-        Assert.AreEqual(count - 2, result.UnmatchedPeople);
-        for (var index = 0; index < count; index++)
-        {
-            Assert.AreEqual(index + 1, result.Results[index].InputPosition);
-            Assert.AreEqual(inputs[index].SourceRecordId, result.Results[index].SourceRecordId);
-            if (index == 0 || index == count - 1)
-            {
-                Assert.IsTrue(result.Results[index].MatchFound);
-                Assert.IsNotNull(result.Results[index].Person);
-                Assert.AreEqual(expected, result.Results[index].Person!.PersonId);
-            }
-            else
-            {
-                Assert.IsFalse(result.Results[index].MatchFound);
-                Assert.IsNull(result.Results[index].Person);
-            }
-        }
-    }
 }

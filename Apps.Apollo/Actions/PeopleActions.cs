@@ -33,43 +33,4 @@ public class PeopleActions(InvocationContext context) : Invocable(context)
         }
         catch (JsonException) { throw new PluginApplicationException("Apollo returned an unreadable person response. Retry the action."); }
     }
-    [Action("Enrich people", Description = "Enrich multiple people in batches of ten, preserving input positions and source record IDs. May consume credits.")]
-    public async Task<EnrichPeopleResponse> EnrichPeople([ActionParameter] EnrichPeopleRequest input)
-    {
-        if (input.People == null || input.People.Length == 0)
-            throw new PluginMisconfigurationException("Add at least one person to the People collection.");
-
-        // Validate and materialize every row before spending credits on the first batch.
-        var details = new Dictionary<string, string>[input.People.Length];
-        for (var index = 0; index < input.People.Length; index++)
-        {
-            try { details[index] = PeopleEnrichmentMapping.ToDetails(input.People[index]); }
-            catch (PluginMisconfigurationException ex)
-            { throw new PluginMisconfigurationException($"Person at input position {index + 1}: {ex.Message}"); }
-        }
-
-        var results = new List<PersonEnrichmentResult>(input.People.Length);
-        decimal? credits = 0m;
-        for (var offset = 0; offset < details.Length; offset += 10)
-        {
-            var count = Math.Min(10, details.Length - offset);
-            try
-            {
-                var batch = await Client.EnrichPeopleAsync(details.Skip(offset).Take(count).ToArray(), input.RevealPersonalEmails == true);
-                results.AddRange(PeopleEnrichmentMapping.MapBatch(batch, input.People.Skip(offset).Take(count).ToArray(), offset));
-                credits = credits.HasValue && batch.CreditsConsumed.HasValue ? credits + batch.CreditsConsumed : null;
-            }
-            catch (PluginMisconfigurationException ex)
-            {
-                throw new PluginMisconfigurationException($"Batch for input positions {offset + 1}–{offset + count} failed. {offset} earlier inputs completed; their requests may have consumed credits. Fix the cause and retry only the failed and later inputs. {ex.Message}");
-            }
-            catch (PluginApplicationException ex)
-            {
-                throw new PluginApplicationException($"Batch for input positions {offset + 1}–{offset + count} failed. {offset} earlier inputs completed; those and the failing request may have consumed credits. Review before rerunning the collection. {ex.Message}");
-            }
-        }
-        var matched = results.Count(x => x.MatchFound);
-        return new() { Results = results.ToArray(), RequestedPeople = details.Length, MatchedPeople = matched,
-            UnmatchedPeople = details.Length - matched, CreditsConsumed = credits };
-    }
 }

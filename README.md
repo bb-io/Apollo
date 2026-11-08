@@ -27,18 +27,14 @@ Optional inputs are added using **+** under **Advanced** in the Bird editor. Sha
   - **Last name**: Supply with First name.
   - **Company domain**: Bare domain or website URL, for example blackbird.io.
   - **Company name**: Company matching hint.
-  - **Include personal emails**: Defaults to false. Applies to all rows in Enrich people when enabled there.
+  - **Include personal emails**: Defaults to false.
 
-- **Enrich people** Enrich multiple people in batches of ten, preserving input positions and source record IDs. May consume credits.
-  - **Source record ID**: Optional per-row external ID, such as a Notion page ID; preserved in outputs and never sent to the service.
 
 ### Companies
 
 - **Enrich company** Find a company using its domain, website or LinkedIn company URL and output available company details. May consume credits.
   - **Website URL**: Company website URL.
   - **LinkedIn company URL**: Company profile URL. Supply a domain, website or LinkedIn company URL; company name alone is insufficient.
-
-- **Enrich companies** Enrich multiple companies by domain in batches of ten, preserving source rows and enriching repeated domains once. May consume credits.
 
 - **Search companies** Search company candidates by name, domain and other filters, up to Maximum results. May consume credits per page.
   - **Company domains**: Multiple domains or website URLs; at most 1,000 unique domains.

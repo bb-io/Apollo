@@ -31,19 +31,3 @@ public class EnrichCompanyResponse
     [Display("Match found")] public bool MatchFound { get; set; }
     [Display("Company")] public CompanyResponse? Company { get; set; }
 }
-public class CompanyEnrichmentResult
-{
-    [Display("Input position", Description = "One-based position in the original Companies collection.")] public int InputPosition { get; set; }
-    [Display("Source record ID")] public string? SourceRecordId { get; set; }
-    [Display("Requested domain")] public string RequestedDomain { get; set; } = "";
-    [Display("Match found")] public bool MatchFound { get; set; }
-    [Display("Company")] public CompanyResponse? Company { get; set; }
-}
-public class EnrichCompaniesResponse
-{
-    [Display("Results")] public CompanyEnrichmentResult[] Results { get; set; } = [];
-    [Display("Requested companies")] public int RequestedCompanies { get; set; }
-    [Display("Unique domains")] public int UniqueDomains { get; set; }
-    [Display("Matched companies", Description = "Number of matched source rows, including duplicate domains.")] public int MatchedCompanies { get; set; }
-    [Display("Unmatched companies")] public int UnmatchedCompanies { get; set; }
-}

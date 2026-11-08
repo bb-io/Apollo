@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using Apps.Apollo.Models.Dtos;
-using Newtonsoft.Json;
 using System.Net;
 using System.Net.Http.Headers;
 using Apps.Apollo.Constants;
@@ -34,26 +32,6 @@ public partial class ApolloClient : BlackBirdRestClient
         var response = await policy.ExecuteAsync(() => ExecuteAsync(request));
         if (!response.IsSuccessStatusCode) throw CreateException(response);
         return response;
-    }
-    public async Task<BulkPeopleDto> EnrichPeopleAsync(Dictionary<string, string>[] details, bool revealPersonalEmails)
-    {
-        var request = new RestRequest("people/bulk_match", Method.Post)
-            .AddQueryParameter("reveal_personal_emails", revealPersonalEmails ? "true" : "false")
-            .AddQueryParameter("reveal_phone_number", "false")
-            .AddQueryParameter("run_waterfall_email", "false")
-            .AddQueryParameter("run_waterfall_phone", "false")
-            .AddJsonBody(new { details });
-        var response = await ExecuteWithErrorHandling(request);
-        try
-        {
-            var payload = JObject.Parse(response.Content ?? "");
-            if (payload["error_details"] is JObject) throw CreateException(response);
-            var batch = payload.ToObject<BulkPeopleDto>();
-            if (batch == null || batch.Status != "success")
-                throw new PluginApplicationException("Apollo did not report successful bulk enrichment. Review the request before retrying.");
-            return batch;
-        }
-        catch (JsonException) { throw new PluginApplicationException("Apollo returned unreadable bulk enrichment data. Review the request before retrying."); }
     }
     private static TimeSpan RetryDelay(RestResponse response, int attempt)
     {

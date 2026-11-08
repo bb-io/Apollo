@@ -36,35 +36,4 @@ internal static class CompanyEnrichmentMapping
         if (!string.IsNullOrWhiteSpace(input.Name)) details["name"] = input.Name.Trim();
         return details;
     }
-    internal static Dictionary<string, CompanyResponse> IndexBatch(string[] requested, CompanyResponse?[] companies)
-    {
-        var allowed = requested.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var index = new Dictionary<string, CompanyResponse>(StringComparer.OrdinalIgnoreCase);
-        foreach (var company in companies)
-        {
-            if (company == null) continue;
-            if (string.IsNullOrWhiteSpace(company.CompanyId) || string.IsNullOrWhiteSpace(company.Domain))
-                throw new PluginApplicationException("Apollo returned a company without an ID or domain. Stopped to avoid linking it to the wrong source record.");
-            string domain;
-            try { domain = Domain(company.Domain); }
-            catch (PluginMisconfigurationException) { throw new PluginApplicationException("Apollo returned an unreadable company domain."); }
-            if (!allowed.Contains(domain))
-                throw new PluginApplicationException("Apollo returned a company domain different from all requested domains. It may be a renamed company or domain alias. Use Enrich company for that record and review the result before syncing it.");
-            if (index.TryGetValue(domain, out var previous) && previous.CompanyId != company.CompanyId)
-                throw new PluginApplicationException("Apollo returned multiple company IDs for one domain. Review the company before syncing it.");
-            index[domain] = company;
-        }
-        return index;
-    }
-    internal static EnrichCompaniesResponse RestoreRows(CompanyEnrichmentInput[] inputs, string[] domains, Dictionary<string, CompanyResponse> companies)
-    {
-        var results = domains.Select((domain, i) => new CompanyEnrichmentResult
-        {
-            InputPosition = i + 1, SourceRecordId = inputs[i].SourceRecordId, RequestedDomain = domain,
-            MatchFound = companies.ContainsKey(domain), Company = companies.GetValueOrDefault(domain)
-        }).ToArray();
-        var matched = results.Count(x => x.MatchFound);
-        return new() { Results = results, RequestedCompanies = inputs.Length, UniqueDomains = domains.Distinct(StringComparer.OrdinalIgnoreCase).Count(),
-            MatchedCompanies = matched, UnmatchedCompanies = inputs.Length - matched };
-    }
 }
