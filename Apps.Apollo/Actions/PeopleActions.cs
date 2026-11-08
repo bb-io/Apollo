@@ -12,7 +12,7 @@ namespace Apps.Apollo.Actions;
 [ActionList("People")]
 public class PeopleActions(InvocationContext context) : Invocable(context)
 {
-    [Action("Enrich person", Description = "Find a person and return available email, company and profile information. May consume Apollo credits.")]
+    [Action("Enrich person", Description = "Match a person and output available email, company and profile information. Supply identifying details; enrichment may consume credits.")]
     public async Task<EnrichPersonResponse> EnrichPerson([ActionParameter] EnrichPersonRequest input)
     {
         var values = PeopleEnrichmentMapping.ToDetails(input);
@@ -33,7 +33,7 @@ public class PeopleActions(InvocationContext context) : Invocable(context)
         }
         catch (JsonException) { throw new PluginApplicationException("Apollo returned an unreadable person response. Retry the action."); }
     }
-    [Action("Enrich people", Description = "Enrich a collection of people in batches of ten. Preserves input positions and source record IDs. May consume Apollo credits.")]
+    [Action("Enrich people", Description = "Enrich multiple people in batches of ten, preserving input positions and source record IDs. May consume credits.")]
     public async Task<EnrichPeopleResponse> EnrichPeople([ActionParameter] EnrichPeopleRequest input)
     {
         if (input.People == null || input.People.Length == 0)

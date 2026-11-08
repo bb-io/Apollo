@@ -9,7 +9,7 @@ namespace Apps.Apollo.Actions;
 [ActionList("Companies")]
 public class CompanyActions(InvocationContext context) : Invocable(context)
 {
-    [Action("Enrich company", Description = "Find a company using its domain, website or LinkedIn company URL. May consume Apollo credits.")]
+    [Action("Enrich company", Description = "Find a company using its domain, website or LinkedIn company URL and output available company details. May consume credits.")]
     public async Task<EnrichCompanyResponse> EnrichCompany([ActionParameter] EnrichCompanyRequest input)
     {
         var company = await Client.EnrichCompanyAsync(CompanyEnrichmentMapping.SingleDetails(input));
@@ -17,7 +17,7 @@ public class CompanyActions(InvocationContext context) : Invocable(context)
             throw new PluginApplicationException("Apollo returned a company without an ID. Review before syncing the result.");
         return new() { MatchFound = company != null, Company = company };
     }
-    [Action("Enrich companies", Description = "Enrich companies by domain in batches of ten. Retains source rows and enriches repeated domains once. May consume Apollo credits.")]
+    [Action("Enrich companies", Description = "Enrich multiple companies by domain in batches of ten, preserving source rows and enriching repeated domains once. May consume credits.")]
     public async Task<EnrichCompaniesResponse> EnrichCompanies([ActionParameter] EnrichCompaniesRequest input)
     {
         if (input.Companies == null || input.Companies.Length == 0)
@@ -45,7 +45,7 @@ public class CompanyActions(InvocationContext context) : Invocable(context)
         }
         return CompanyEnrichmentMapping.RestoreRows(input.Companies, domains, companies);
     }
-    [Action("Search companies", Description = "Search Apollo's company database by name, domain and other filters. Retrieves pages automatically up to Maximum results. May consume credits per page.")]
+    [Action("Search companies", Description = "Search company candidates by name, domain and other filters, up to Maximum results. May consume credits per page.")]
     public Task<SearchCompaniesResponse> SearchCompanies([ActionParameter] SearchCompaniesRequest input)
     {
         var (filters, limit) = CompanySearch.Validate(input);

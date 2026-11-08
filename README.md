@@ -1,294 +1,170 @@
-# Blackbird.io Apollo — starter build
+# Blackbird.io Apollo [Beta]
 
-Incremental Apollo app build: single/bulk person enrichment and single/bulk company enrichment, company search, saved-contact search/get, contact-list lookup and outbound outreach email retrieval, dialer call search and conversation search/details are implemented. This is not yet the complete planned app.
+Connect Apollo sales intelligence to Blackbird workflows. Search saved contacts, companies and outreach activity; enrich people and companies; retrieve available conversation details.
 
 <!-- begin docs -->
+
 ## Before setting up
 
-Use an Apollo API key with permission for `api/v1/people/match` (or a master key). API key authentication is implemented; OAuth is not implemented. Apollo documents OAuth for partner integrations, so confirm that distribution model before public release.
+Create an Apollo API key with permission for the actions you intend to use. Call search requires a master API key. Account plan, record access and endpoint permissions still apply. This app uses API key authentication; OAuth is not implemented.
 
 ## Connecting
 
-Add an Apollo connection in Blackbird and enter the API key. The validator calls `GET /api/v1/auth/health`. Authentication failures are distinguished from permissions, rate limits and service failures; transient failures surface as errors rather than successful validation.
+In Blackbird, select **Apollo [Beta]** (or **Apollo [Beta]_Dev** in the internal test environment), click **Connect**, and enter your **API key**. Connection validation checks authentication; individual actions can still require additional permissions.
 
 ## Actions
 
-### Enrich person
+Optional inputs are added using **+** under **Advanced** in the Bird editor. Shared input names are described once below and retain the same meaning wherever available. Required collection and ID inputs appear directly in their actions.
 
-Matches a person using a person ID, email, LinkedIn URL, full name, or first and last names. Company domain/name improves matching. Company URLs are normalized to bare domains. Inputs are sent as query parameters as defined by the supplied OpenAPI. Outputs include match found, match confidence, person and contact IDs, profile, email status, location and nested company data. A missing match returns `MatchFound=false` and `Person=null`; a missing confidence value is preserved rather than invented. Low-confidence results must be reviewed before updating external records.
+### People
 
-Personal emails are optional and disabled by default. Phone and waterfall enrichment are not included in this batch. Enrichment can consume Apollo credits even when personal emails are disabled. No secondary profile request is made.
+- **Enrich person** Match a person and output available email, company and profile information. Supply identifying details; enrichment may consume credits.
+  - **Person ID**: Database person ID, distinct from a saved Contact ID.
+  - **Email address**: Known email used to identify the person.
+  - **LinkedIn URL**: Person profile URL.
+  - **Full name**: Use with a company domain or company name for better matching.
+  - **First name**: Supply with Last name when Full name is absent.
+  - **Last name**: Supply with First name.
+  - **Company domain**: Bare domain or website URL, for example blackbird.io.
+  - **Company name**: Company matching hint.
+  - **Include personal emails**: Defaults to false. Applies to all rows in Enrich people when enabled there.
 
-### Enrich people
+- **Enrich people** Enrich multiple people in batches of ten, preserving input positions and source record IDs. May consume credits.
+  - **Source record ID**: Optional per-row external ID, such as a Notion page ID; preserved in outputs and never sent to the service.
 
-Supply a collection of people with the same identity fields as Enrich person, plus an optional Source record ID for each row (for example, the Notion page ID). Personal email enrichment is a single optional setting for the entire action. All inputs are validated before the first API request. The action submits sequential batches of at most ten to `POST /api/v1/people/bulk_match`, with no per-person follow-up requests. Phone and waterfall enrichment are explicitly disabled.
+### Companies
 
-Each result contains Input position (one-based across the full collection), Source record ID (unchanged), Match found and Person. Unmatched inputs remain in place with Person=null. Duplicate inputs remain separate result rows. Aggregate matched/unmatched counts count input rows; credits consumed is a decimal sum of Apollo-reported billing figures, or blank if any batch omits its figure. It is not inferred from match counts.
+- **Enrich company** Find a company using its domain, website or LinkedIn company URL and output available company details. May consume credits.
+  - **Website URL**: Company website URL.
+  - **LinkedIn company URL**: Company profile URL. Supply a domain, website or LinkedIn company URL; company name alone is insufficient.
 
-Apollo documents null slots for unmatched standard-enrichment entries. Positional alignment of matches with details is an integration assumption to verify with the live tests; the reference does not explicitly guarantee ordering. Result cardinality and supplied person IDs are checked before returning a batch. These checks cannot independently prove ordering for inputs identified only by name/email. Review low/unknown-confidence matches before syncing external records. Use person IDs where available.
+- **Enrich companies** Enrich multiple companies by domain in batches of ten, preserving source rows and enriching repeated domains once. May consume credits.
 
-On a failed batch the action stops, returns no partial success response and identifies the failed input range and number of previously completed inputs in its error. Earlier batches—and possibly the failed request—may already have consumed credits. Do not blindly retry the whole action. This version has no durable batch resume state. No personal data or credentials are logged by the action or tests.
+- **Search companies** Search company candidates by name, domain and other filters, up to Maximum results. May consume credits per page.
+  - **Company domains**: Multiple domains or website URLs; at most 1,000 unique domains.
+  - **Headquarters locations**: Multiple cities, states or countries.
+  - **Industries**: Multiple exact industry names.
+  - **Minimum employees**: Supply both employee bounds.
+  - **Maximum employees**: Upper bound for employee filtering.
+  - **Maximum results**: Default 100; range 1–50,000 for searches except conversations, which allows up to 10,000. Add this input under Advanced to change the total cap; pages are retrieved automatically.
 
-### Enrich company
+### Contacts
 
-Supply a company domain, website URL or LinkedIn company URL; optionally add the company name as a matching hint. This action conservatively requires an identifier other than name: the supplied OpenAPI says name alone is unsupported, while the current web overview is inconsistent with its parameter descriptions. Use Search companies for name-only lookup.
+- **Search contacts** Search your saved contacts by keywords or contact lists, up to Maximum results. Does not search the general people database or enrich missing details.
+  - **Keywords**: Search saved-contact names, emails, job titles or company names. In other searches, keywords apply to that action’s records; they are not an exact recipient filter.
+  - **List IDs**: Multiple contact lists. Contacts can belong to any selected list.
 
-Calls `GET /api/v1/organizations/enrich`. Domain input accepts bare domains and website URLs, normalizing case and removing a leading www. Website and LinkedIn inputs must be HTTP/HTTPS URLs; LinkedIn URLs must identify a company. A null organization result returns Match found=false; unreadable/missing result structures raise an error rather than masquerading as a no-match. A returned company without an ID raises an error. A single-company match may resolve to a canonical/renamed domain; review it before updating an external record.
+- **Get contact** Retrieve a saved contact by Contact ID and output available profile, email, company, phone and list information.
 
-Outputs include company ID, domain, website, LinkedIn URL, name, industry, employee estimate, description, corporate phone, location, founding year, revenue, funding and parent company ID when available. Optional financial figures are returned as numbers without assuming an undocumented currency. These are organization IDs, not saved Apollo account IDs.
+- **Search contact lists** Search lists for saved contacts, excluding account and sequence lists.
+  - **List name**: Case-insensitive part of a contact-list name.
 
-### Enrich companies
+### Emails
 
-Supply Companies, a collection of Company domain and optional Source record ID. Bulk enrichment in this version requires domains; website URLs in the domain field are normalized. It does not accept company-name-only or LinkedIn-only rows. All rows are validated before the first request. Normalized domains are deduplicated across the full action and sent sequentially to `POST /api/v1/organizations/bulk_enrich` through repeated `domains[]` query parameters, at most ten unique domains per request.
+- **Search outreach emails** Search sequence outreach by keywords, sequences, senders, status or date range. Does not retrieve inbound reply bodies.
+  - **Sequence IDs**: Multiple sequence IDs.
+  - **Sender user IDs**: Multiple sender IDs.
+  - **Email statuses**: Multiple supported statuses; use Delivered to search sent messages. Completed is an output status.
+  - **Start date**: Supply both calendar dates, with End date later than Start date. Also applies to call search.
+  - **End date**: End calendar date.
+  - **Date basis**: Sent date by default; Scheduled date is also available.
 
-Returned companies are indexed by normalized primary_domain, independently of API result ordering or omitted/null unmatched entries. Original rows are then restored with one-based Input position, Source record ID, Requested domain, Match found and Company. Duplicates retain distinct source rows while avoiding repeat enrichment within the same action. Returned domains outside the requested set, missing IDs/domains and conflicting company IDs for one domain raise an error. Renamed/alias domains must be enriched individually and reviewed rather than guessed into a source row.
+- **Get email content** Retrieve sent outbound email content by message IDs in batches of ten. Preserve unavailable input positions; drafts and inbound replies are excluded.
+  - **Body format**: Plain text by default; HTML is also supported.
 
-Matched/unmatched counts refer to original input rows; Unique domains reports normalized domain count. Credit usage is not inferred: the supplied company schema does not expose a credit total. On a failed batch, the action stops without partial success output and reports the batch number plus previously completed unique domains. Earlier and possibly current requests may already have consumed credits; there is no durable resume state. No extra per-company profile requests are made.
+### Calls and conversations
 
-### Search companies
+- **Search calls** Search dialer calls and output available call information without fetching conversation details. Requires a master API key.
+  - **Direction**: Incoming or outgoing.
+  - **User IDs**: Multiple call-owner user IDs.
+  - **Call purpose IDs**: Multiple IDs from the call filter URL.
+  - **Call outcome IDs**: Multiple IDs from the disposition filter URL.
+  - **Minimum duration**: Seconds; supply both duration bounds, with minimum at least zero.
+  - **Maximum duration**: Seconds; must exceed Minimum duration.
 
-Search the Apollo company database using Company name (partial match), Company domains, Headquarters locations, exact Apollo industry names or an employee range. At least one filter is required. Employee-range filtering requires both bounds. Maximum results defaults to 100 and accepts 1–50,000. Domains accept URLs, normalize and deduplicate; at most 1,000 unique domains are sent. Names/locations/industries are trimmed; blank list values are removed.
+- **Search conversations** Search conversation summaries by type, account, contacts, companies, tags or time range, without fetching transcripts or consuming detail-retrieval credits.
+  - **Conversation type**: Video meeting or phone call.
+  - **Account ID**: Saved company account ID.
+  - **Contact IDs**: Multiple saved contact IDs.
+  - **Company IDs**: Multiple database organization IDs, distinct from Account IDs.
+  - **Tag IDs**: Multiple conversation tag IDs.
+  - **Start time**: Supply both ISO 8601 timestamps with Z or an explicit timezone offset.
+  - **End time**: Must be later than Start time; timestamps are normalized to UTC.
 
-Calls `POST /api/v1/mixed_companies/search` with documented query parameters. Pages are fetched sequentially with at most 100 records each. Page/per-page inputs are hidden from the workflow editor. There are no follow-up calls to enrich individual companies. Search returns candidate companies, not a selected match: review the name/domain and pass the chosen domain into enrichment when needed. A search profile can have fewer fields than an enriched profile; absent values remain blank.
+- **Get conversation** Retrieve a conversation's available transcript, recording URLs and participants. May consume one credit when AI insights exist.
 
-Paid page requests are bounded by ceil(Maximum results / page size), up to Apollo's 500-page display ceiling. A small search cap uses a correspondingly small page size. Result IDs are deduplicated, wrong page metadata and repeated full company pages are rejected, and processing stops at the requested limit or end of pagination. Empty searches return an empty Companies array. If duplicate results reduce the unique company count, the action can return fewer than Maximum results rather than fetch additional paid pages beyond the budget.
+## Matching and enrichment
 
-Outputs: Companies, Returned companies, Total matching records when Apollo reports it, Pages retrieved, Results limited, and Saved accounts included. Both organizations and accounts from the same search response are included. Company ID always represents the database organization ID: an account maps organization_id to Company ID and its own id to the separate Account ID. An unlinked account keeps Company ID blank and remains usable by domain or Account ID. Account domain is read from primary_domain or domain. No company ID is invented and no extra detail/enrichment requests are made.
+Search contacts searches your team's **saved contacts**, not the general people database. An empty result does not establish that the person is absent from Apollo. Keywords can produce multiple candidates; verify the company or LinkedIn URL before selecting a contact. Get contact uses a saved Contact ID, while Enrich person uses a database Person ID. These identifiers are not interchangeable.
 
-Results deduplicate by Company ID when available, otherwise by Account ID in a separate namespace. If the same organization appears in both arrays, the organization's profile is retained along with its first linked Account ID. Multiple saved accounts linked to one organization do not produce duplicate company rows. Distinct unlinked accounts are retained separately; they are not merged by potentially ambiguous domain/name matches.
+For a Notion-to-email workflow, first check whether Notion already holds an acceptable email. If needed, search saved contacts and inspect the matching contact's email and status. If no suitable saved result exists, use Enrich person with a LinkedIn URL, Person ID, or a full name plus company domain. For example, supply Full name and Company domain together. Check Match found, the returned identity, email and email status before updating Notion. A match does not guarantee an available or verified email. Missing match confidence stays blank; review low or unknown confidence. The app does not save contacts or update Notion automatically.
 
-Total matching records is Apollo's combined total before local deduplication. Results limited is true when more records may exist because of the result/page budget or Apollo partial-result access; it is not an exact remaining-result count. Saved accounts included means the response contained saved accounts, not that every company is saved in the workspace.
+Enrich person requires a Person ID, email, LinkedIn URL, full name, or both first and last names. Company details improve matching. Include personal emails defaults to false and does not disable work-email enrichment. Phone and waterfall enrichment are not enabled by these actions.
 
-Failed searches produce an error rather than partial success output. Earlier/current requests may already have consumed credits, including when parsing fails. API errors use the shared retry/error handling. Dedicated saved-account search with account-specific filters remains a separate planned action.
+Enrich company requires a domain, website URL or LinkedIn company URL; use Search companies for name-only discovery. Search outputs are candidates and can contain fewer fields than enrichment outputs. Search companies includes both database companies and saved accounts when present, with separate Company ID and Account ID fields. Unlinked saved accounts can have no Company ID. Total matching records is the API total before local deduplication.
 
-### Search contacts
+## Collections, limits and credits
 
-Searches saved contacts in your Apollo workspace, rather than prospecting the general people database. Optional Keywords can match names, emails, job titles or employers. Optional List IDs uses Apollo's contact_label_ids body field; multiple lists match contacts from any selected list, alongside keyword filtering. Blank filters export saved contacts up to Maximum results (default 100, range 1–50,000).
+Searches default to 100 total results, not 100 pages. Maximum results controls the total cap and pagination is automatic. Blank filters search visible saved contacts, outreach emails, calls or conversations up to that cap; Search companies requires at least one filter. Company employee filters require both bounds. Results limited indicates that further or restricted results may exist; total counts remain blank when not supplied. Concurrent changes can affect pagination, so results are not a snapshot.
 
-Calls `POST /api/v1/contacts/search` using a JSON dictionary body. Page size is at most 100, with up to 500 sequential pages. The page-request budget is ceil(Maximum results / page size). Sorts by contact_created_at ascending. Contact IDs are deduplicated, wrong/repeating pages are rejected, and empty results return an empty Contacts array. Results limited flags remaining/partial results when detectable. Pagination is not a snapshot: concurrent contact creation, deletion or list changes can affect offset-based results. This action is not yet an incremental sync or event.
+Bulk people enrichment submits up to ten rows per request. Outputs retain one-based Input position, Source record ID and unmatched or duplicate rows. Matching relies on the standard endpoint's positional response alignment, checked with known-ID and batch-boundary tests; name-only inputs cannot independently prove response ordering. Bulk company enrichment deduplicates normalized domains, submits up to ten unique domains per request and restores the original rows by domain. Alias or renamed domains that cannot be correlated safely should be enriched individually and reviewed.
 
-Returns available contact profile, email/status, company name, all four distinct IDs, LinkedIn URL, location, timestamps, list IDs, available phone numbers and email unsubscribe state. It makes no detail/enrichment request for each contact. It does not reveal new phone/email data or automatically write to another CRM; use the returned collection in your Bird to map downstream fields.
+Enrichment and company search may consume credits. Get conversation may consume one credit when AI insights exist. Bulk people Credits consumed uses only API-reported figures and stays blank when any batch omits its figure; counts are not billing estimates. A failed multi-request action produces no partial success output, but earlier requests may already have consumed credits. Errors identify completed work for bulk enrichment; review before rerunning. There is no durable batch-resume checkpoint.
 
-### Get contact
+## Outreach and conversations
 
-Select a Contact ID through the searchable dropdown or map an existing saved contact ID. Calls `GET /api/v1/contacts/{contact_id}` with an escaped ID. Blank IDs are rejected locally and a returned ID mismatch raises an error. Contact ID is the workspace record ID; Person ID may be blank for manually created contacts. No ID is substituted for another identifier type.
+Outreach search covers sequence emails, not a complete mailbox. Keywords are not an exact recipient or Contact ID filter. Get email content requires outreach Email message IDs, rather than provider, sequence or contact IDs. It retrieves completed outbound messages in batches of ten unique IDs, then restores duplicate and unavailable input positions. Content available means a message was included, even if its stored body is blank. Missing, inaccessible or unsent IDs produce Content available=false without an inferred reason. Neither action retrieves inbound reply bodies or sends email.
 
-### Search contact lists
+Search conversations outputs summaries without per-result detail requests. Use Get conversation separately with the chosen Conversation ID to obtain available transcript text, segments, participants and recording URLs. Processing or inaccessible content can lack transcripts or recordings. Recording URLs are not downloaded and remain subject to provider access and expiry. Call, conversation, contact, person, company and account IDs remain distinct.
 
-Calls `GET /api/v1/labels` once. Apollo documents this as an all-lists endpoint with no pagination or search parameters. The action filters locally to modality=contacts, supports an optional case-insensitive List name substring, and returns unique List IDs, names and Apollo's cached contact counts. Counts may be stale. Account and sequence lists are excluded. Empty results return an empty collection.
-
-### Contact dropdowns
-
-Get contact has a dynamic contact dropdown using server-side keyword search and at most 30 results from one request. Search contacts has a dynamic list dropdown: one all-lists request, local name filtering, then at most 30 suggestions. The Search contact lists action returns all matching contact lists without that suggestion cap; IDs can also be mapped directly into the workflow. Dropdowns need the corresponding endpoint permissions. Cancellation is checked before and after retrieval; shared HTTP timeout/retry handling applies during the request. Editor/runtime interaction still requires testing in Blackbird.
-
-### Search outreach emails
-
-Searches emails created/sent through Apollo sequences using `GET /api/v1/emailer_messages/search`. Optional filters: Keywords, Sequence IDs, Sender user IDs, Email statuses and date range. Keywords are not an exact contact or recipient filter. There is no documented contact-ID filter on this endpoint, so this action does not add one or silently scan the workspace for a contact.
-
-Date filters require both Start date and End date, with the end calendar date later than the start. Date basis defaults to Sent date (completed_at) and also supports Scheduled date (due_at). The action sends YYYY-MM-DD only; it does not apply an undocumented timezone conversion. Search status choices are validated against documented values. Use delivered as the sent-email search filter; completed is a response status, not a supported search-filter value.
-
-Maximum results defaults to 100 and accepts 1–50,000. Blank filters retrieve visible outreach emails up to the cap. Pages are sequential, at most 100 records each, bounded by ceil(Maximum results / page size) and 500 pages. Pagination metadata is used when returned; Apollo's supplied example omits it, so short-page detection is the fallback. Total matching emails stays blank when not reported. Duplicate message IDs are removed and wrong/repeated pages raise an error.
-
-Outputs include message/contact/sequence/account/user/email-account/provider identifiers kept distinct; subject, sender/recipient information, send/schedule/failure timestamps, status, failure reason and reply classification; and text/HTML bodies when included by search. Search bodies may be missing/unloaded; absence is not fabricated into complete content. There are no per-message content or enrichment requests during search.
-
-### Get email content
-
-Accepts a collection of Apollo Email message IDs and a Body format (plain text by default or HTML). Uses `POST /api/v1/emailer_messages/get_content` with an anonymous JSON body containing ids and body_format. Unique IDs are batched into groups of at most ten; this avoids Apollo silently ignoring IDs after the first ten. Identical IDs are requested once per action and restored to each original input position.
-
-This endpoint returns only completed outbound emails sent by your team. Drafts, scheduled/failed messages, inbound replies, unknown IDs and inaccessible IDs are omitted by Apollo. Results are mapped by ID rather than array position. Every requested input gets one result with Input position, Email message ID, Content available and nullable Email content. Missing content is not treated as an API error and does not reveal why the ID was omitted. A matched email with a blank/null stored body remains Content available=true, with the original empty/null body preserved. Available/unavailable counts refer to input positions, including duplicate IDs.
-
-Returned content has the subject, requested-format body, status, sent timestamp and recipients. Recipient types use the same output field for the search endpoint's recipient_type_cd and the content endpoint's type. Unexpected IDs, duplicate response entries, wrong format or non-completed content status raise an error to prevent incorrect downstream association. All batches must succeed before output is returned; this read-only action has no durable resume state.
-
-These actions are not a full mailbox or inbound-reply sync. Reply classification is metadata, not the reply body. They never send an email, update a contact or write into an external CRM. Link downstream CRM activity records using message ID and available contact/account IDs, and map the selected content explicitly in your Bird.
-
-### Search calls
-
-Calls `GET /api/v1/phone_calls/search` to retrieve calls made or received through Apollo's dialer. This endpoint requires a master API key according to Apollo's current docs. Optional filters include Keywords, Direction, User IDs, Call purpose IDs, Call outcome IDs, paired calendar dates and paired duration bounds in seconds. Direction is sent as the documented string incoming/outgoing, while the returned Incoming call field is boolean. End date must be later than Start date; duration bounds require 0 <= minimum < maximum.
-
-The docs use an ambiguous contact_label_ids[] parameter name while describing contacts and linking to user-ID lookup. This version deliberately does not expose that unverified contact/list filter. Purpose/outcome IDs can be taken from Apollo's filter URLs. Calls return independent Call ID, Conversation ID, Contact ID, Account ID and User ID plus available numbers, timestamps, duration, status, note text, recording URL and transcription status.
-
-Maximum results defaults to 100 and permits 1–50,000. Pages contain at most 100 records with an app guard of 500 requests; IDs deduplicate, wrong/repeated pages fail, and empty results return an empty Calls array. Recording URLs are returned as metadata only: the action does not download recordings, request transcripts or retrieve linked conversation details.
-
-### Search conversations
-
-Calls `POST /api/v1/conversations/search` with a JSON dictionary. Optional filters include Conversation type (video meeting/phone call), Account ID, Contact IDs, Company IDs (organization IDs), Tag IDs and paired timestamp bounds. Times must be ISO 8601 with Z or an explicit offset and are normalized to UTC. End time must follow Start time. No undocumented topic/keyword or sort fields are invented.
-
-Apollo uses num_fetch_result rather than per_page for this endpoint. The app uses 25 records per request as a conservative page size matching Apollo's examples; this is not asserted to be the API maximum. Maximum results defaults to 100 with an app-selected ceiling of 10,000. Retrieval is sequential with bounded page requests, ID deduplication and loop guards. Standard pagination metadata is used when present, with short-page fallback otherwise. Empty results return an empty Conversations array. Result limit/partial-access conditions are exposed through Results limited.
-
-Search returns available topic, type, state, start time, duration, host/user ID, privacy/access metadata, participant names and account IDs. Search summaries do not include transcripts or recording URLs, and the action does not issue detail requests for each result. Search is documented as zero credits.
-
-### Get conversation
-
-Calls `GET /api/v1/conversations/{id}` for one ID from conversation search. Apollo supports an optional id_shareid; the output ID is checked against the base conversation ID. The detail response is a direct object, not a conversation wrapper. A matching ID is required before returning data.
-
-Outputs include the available base conversation fields, audio/video recording URLs, transcript segments, combined transcript text, flattened participants, associated account/deal IDs and failure code. Transcript text preserves Apollo's sentence order and prefixes participant names when supplied. Segment timing units are not documented in the supplied schema, so this version does not guess their units or expose timing offsets. Participants are mapped from the documented internal/external groups; participant, contact, company and account IDs stay separate. Other unmodeled AI insight/scorecard fields are not implied to be available in this action.
-
-Missing transcripts/participants/ID arrays are normalized to empty collections; absent recording URLs remain null. Processing state and failure code remain available when details have not been generated successfully. URLs are metadata only; access/expiry remains controlled by Apollo or the recording provider. No recording download or AI-summary generation is triggered by this action.
-
-Get conversation may consume one credit when AI insights exist, and zero otherwise. The search action never invokes it automatically. All actions in this batch are read-only, and none records calls, initiates meetings or updates a CRM. Stable activity IDs can be mapped into downstream CRM deduplication; this batch does not implement an event or incremental checkpoint.
+Contact and list dropdowns show at most 30 suggestions. Search contact lists retrieves all matching contact lists without that suggestion cap; IDs can also be mapped directly. List counts are cached and may be stale.
 
 ## Error handling
 
-Reads `error_details.code` and `error_details.message`. Does not depend on retiring legacy error fields. Retries only HTTP 429, up to three times, honoring Retry-After and Apollo platform-rate-limit suggestions. Delays that exceed the remaining 90-second retry-wait budget fail immediately so the workflow can be retried later. No automatic retry of network timeouts or 5xx responses, avoiding ambiguous repeat credit-consuming requests. Per-request timeout is 60 seconds; the wait budget is not a hard end-to-end runtime limit.
+Invalid inputs are rejected before requests where possible. Authentication, permissions, rate limits and service errors surface as action errors. HTTP 429 responses are retried up to three times with server retry guidance and a 90-second total retry-wait budget. Longer required waits fail for a later retry. Requests time out after 60 seconds; this is not an end-to-end action deadline. Network timeouts and server errors are not automatically retried, avoiding ambiguous repeated credit-consuming requests.
 
 <!-- end docs -->
 
-## Local build and testing (PowerShell)
+## Development and testing
 
-Install the .NET 8 SDK (Visual Studio 2022 17.8+ supports .NET 8). Extract this folder, open Apollo.sln, and restore NuGet packages.
+Requires the .NET 8 SDK. From the solution directory:
 
 ```powershell
-dotnet build .\Apollo.sln
+dotnet build .\Apollo.sln --configuration Release
+dotnet test .\Apollo.sln --configuration Release --filter "TestCategory=Offline"
 Copy-Item .\Tests.Apollo\appsettings.json.example .\Tests.Apollo\appsettings.json
 ```
 
-Edit `Tests.Apollo/appsettings.json` locally. Enter the API key under `ConnectionDefinition.api_key`, or set `APOLLO_API_KEY` in your local shell. Keep appsettings.json local; it is gitignored and excluded from the starter ZIP.
-
-For the enrichment test, choose a real known Apollo person. Fill `PersonId` (Apollo database person ID, not contact ID) or `Email`, plus `ExpectedPersonId`. The test requires an actual match and exact expected ID; an empty result cannot pass. No personal data is printed by the tests.
+For live tests, edit the local appsettings.json: set ConnectionDefinition.api_key and, for known-person tests, TestPerson.PersonId or Email plus ExpectedPersonId. APOLLO_API_KEY can override the configured key; the local configuration file is still required. Do not commit credentials. Missing configuration or unavailable sample records mark relevant tests inconclusive. Run individual integration tests deliberately, as enrichment and company search can consume credits.
 
 ```powershell
-# Authentication first; does not run enrichment
 dotnet test .\Apollo.sln --filter "FullyQualifiedName~Connection_"
-# Then enrich one known person; may consume Apollo credits
+dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchContacts_ReturnsSavedContacts"
 dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichPerson_ReturnsExpectedPerson"
 ```
 
-Missing local configuration marks live tests inconclusive. CI builds without credentials and does not run live tests. The icon is a placeholder: replace `Apps.Apollo/image/icon.png` with the approved Apollo icon before release. The central Blackbird release dispatcher is not configured; CI performs only a normal build until the repo and organization settings exist.
+The offline suite covers validation, mapping, pagination guards and batch correlation without API credentials. Live coverage includes known-person/company enrichment, duplicate and unmatched rows, eleven-input batch boundaries, company search, contact/list search and pagination, dropdowns, outbound content and communication searches. Get conversation requires an accessible sample and was previously skipped when none was available. The maintainer has also reported successful sandbox testing; this does not imply every optional filter or plan-dependent endpoint was exercised.
 
-## Next implementation batches
+Pushes to develop run build/offline checks and dispatch Blackbird's central internal deployment workflow. The dispatcher does not wait for downstream completion; verify that central run and the app in the target environment. The pipeline appends _Dev to Product automatically. Production promotion follows a reviewed develop-to-main PR; merging triggers production delivery. Build/offline checks and deployment dispatch run independently. CI does not run credential-dependent integration tests.
 
-Dedicated saved-account search/get; asynchronous phone enrichment; polling events only after verifying incremental API filters and Blackbird runtime support.
+## Current scope and release review
 
-## Bulk enrichment tests
+The current app retrieves and enriches data. It does not implement contact writes, general people prospect search, asynchronous phone/waterfall enrichment, inbound-mail sync or workflow events. Endpoint permissions, account plan and credits govern availability.
 
-The new tests reuse your existing TestPerson and API key settings. Your key must allow `api/v1/people/bulk_match`; single-person permission alone is insufficient. The first test supplies the known person twice with an intentionally unknown ID in the middle. The optional second test submits eleven inputs to exercise the ten-person boundary. Both tests require two known-person result rows and preserved unmatched/source positions. Both may consume credits. No phone or personal email enrichment is requested.
+Before production promotion, replace the placeholder image/icon.png with an approved app icon and confirm the intended authentication/distribution requirements with engineering. Review action mappings and remaining account-specific edge cases in the test environment.
 
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichPeople_PreservesMatchedUnmatchedAndDuplicateInputs"
-# Optional: two API calls, eleven inputs
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichPeople_SplitsElevenInputsAcrossBatches"
-```
+## API references
 
-The collection input shape compiles against the SDK. Blackbird editor mapping and deployed execution still need runtime verification.
-
-## Sources
-
-- https://docs.apollo.io/reference/authentication
-- https://docs.apollo.io/reference/people-enrichment
-- The supplied apollo-rest-api.json
-
-## Offline checks
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-```
-
-See VALIDATION.md for the exact build/test status of this starter.
-
-- https://docs.apollo.io/reference/bulk-people-enrichment
-
-## Company enrichment tests
-
-No new appsettings.json fields are needed. The live tests reuse your existing API key with the public example domains apollo.io and microsoft.com. Your key must permit organizations/enrich and organizations/bulk_enrich (or be a master key).
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichCompany_ReturnsApollo"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichCompanies_PreservesDuplicatesAndUnmatchedDomains"
-# Optional: eleven unique domains across two requests
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~EnrichCompanies_SplitsElevenUniqueDomains"
-```
-
-The bulk smoke test uses apollo.io, a reserved .invalid domain, microsoft.com, and a duplicate Apollo domain. It checks duplicate restoration and unmatched handling without depending on result ordering. The boundary test uses two known domains and nine reserved .invalid domains. All live enrichment tests may consume Apollo credits.
-
-- https://docs.apollo.io/reference/organization-enrichment
-- https://docs.apollo.io/reference/bulk-organization-enrichment
-
-## Company search tests
-
-No config changes are required. Your local key must allow api/v1/mixed_companies/search or be a master key.
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchCompanies_ByNameReturnsCandidates"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchCompanies_ByDomainsReturnsKnownCompanies"
-# Optional pagination test: up to two paid pages
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchCompanies_PaginatesToMaximumResults"
-```
-
-The first two live tests retrieve at most one page each. The optional test searches the broad name fragment software and requests 101 companies across two pages; it requires sufficient Apollo access to return those results. All live search calls may consume credits per page, even when used for tests.
-
-- https://docs.apollo.io/reference/organization-search
-
-## Contact tests
-
-No new appsettings.json fields are required. Tests reuse your local key. Enable permissions for api/v1/contacts/search, api/v1/contacts/show and api/v1/labels/index, or use a master key. The endpoints are documented as zero-credit record retrieval and do not run enrichment. Tests are read-only and do not print contact details.
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchContacts_ReturnsSavedContacts"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~GetContact_ReturnsSameSavedContact"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchContactLists_ReturnsContactLists"
-```
-
-Get contact's test first retrieves one saved contact, then verifies that exact contact ID. With no visible saved contacts, contact-dependent tests are inconclusive rather than inventing or creating a record. An empty contact-list array is a valid response.
-
-Optional checks:
-
-```powershell
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchContacts_ByListReturnsMembers"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~ContactDropdowns_ReturnUniqueItems"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchContacts_PaginatesWhenEnoughSavedContactsExist"
-```
-
-List filtering selects a list ID from the first 100 saved contacts and checks returned memberships; it is inconclusive if those contacts have no lists. Pagination requires at least 101 saved contacts. Do not paste your key or personal contact data in debugging output.
-
-- https://docs.apollo.io/reference/search-for-contacts
-- https://docs.apollo.io/reference/view-a-contact
-- https://docs.apollo.io/reference/get-a-list-of-all-lists
-
-## Outreach email tests
-
-No new local configuration fields are needed. Enable api/v1/emailer_messages/search and api/v1/emailer_messages/get_content permissions, or use a master key. The endpoints are documented as zero-credit read operations.
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchOutreachEmails_ReturnsMessages"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~GetEmailContent_ReturnsSentEmailAndPreservesMissingId"
-```
-
-The content test selects an existing delivered outreach email, requests its content twice with an unavailable ID in between, and verifies exact ID/format/status association. It is inconclusive if no delivered sequence email is visible; no message is sent automatically. Search can validly return zero records and prints only counts, not subjects, recipients or bodies.
-
-Optional content batch/HTML check after those pass:
-
-```powershell
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~GetEmailContent_SplitsElevenUniqueIds"
-```
-
-This uses one existing sent email and ten intentionally unavailable IDs in two content requests; it verifies HTML format and missing-result preservation across the batch boundary.
-
-- https://docs.apollo.io/reference/search-for-outreach-emails
-- Supplied apollo-rest-api.json: POST /emailer_messages/get_content (request and response schemas, omitted-ID and sent-only behavior)
-
-## Call and conversation tests
-
-Use your existing local appsettings.json. Call search requires a master API key. Conversation endpoints need conversations/search and conversations/show permissions or master access. Feature/plan permissions are still enforced by Apollo; tests do not mask access-denied errors as passing results.
-
-```powershell
-dotnet test .\Apollo.sln --filter "TestCategory=Offline"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchCalls_ReturnsDialerResults"
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~SearchConversations_ReturnsSummaries"
-```
-
-Both searches are documented as zero-credit operations. Empty collections are valid; tests print counts only. The next read-only test first searches up to 25 summaries, selects an accessible candidate and fetches its details. It may consume one credit when AI insights exist. With no accessible candidate it reports inconclusive and makes no detail request.
-
-```powershell
-dotnet test .\Apollo.sln --filter "FullyQualifiedName~GetConversation_ReturnsSelectedDetails"
-```
-
-These tests are not a live cross-page test for calls or conversations; production pagination and optional filters still need account-specific verification with sufficient records. Get conversation does not require a transcript/recording to be present: processing/failed conversations may legitimately lack them. Correspondence and recording data are not printed by the tests.
-
-- https://docs.apollo.io/reference/search-for-calls
-- https://docs.apollo.io/reference/search-conversations
-- https://docs.apollo.io/reference/get-conversations-info
+- [Apollo API reference](https://docs.apollo.io/reference/apollo-api)
+- [People enrichment](https://docs.apollo.io/reference/people-enrichment)
+- [Bulk people enrichment](https://docs.apollo.io/reference/bulk-people-enrichment)
+- [Organization enrichment](https://docs.apollo.io/reference/organization-enrichment)
+- [Bulk organization enrichment](https://docs.apollo.io/reference/bulk-organization-enrichment)
+- [Organization search](https://docs.apollo.io/reference/organization-search)
+- [Contact search](https://docs.apollo.io/reference/search-for-contacts)
+- [Contact retrieval](https://docs.apollo.io/reference/view-a-contact)
+- [Contact lists](https://docs.apollo.io/reference/get-a-list-of-all-lists)
+- [Outreach email search](https://docs.apollo.io/reference/search-for-outreach-emails)
+- [Call search](https://docs.apollo.io/reference/search-for-calls)
+- [Conversation search](https://docs.apollo.io/reference/search-conversations)
+- [Conversation details](https://docs.apollo.io/reference/get-conversations-info)

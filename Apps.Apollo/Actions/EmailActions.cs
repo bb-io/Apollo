@@ -8,13 +8,13 @@ namespace Apps.Apollo.Actions;
 [ActionList("Emails")]
 public class EmailActions(InvocationContext context) : Invocable(context)
 {
-    [Action("Search outreach emails", Description = "Search Apollo sequence outreach by keywords, sequences, senders, status or date range. Does not retrieve inbound reply bodies.")]
+    [Action("Search outreach emails", Description = "Search sequence outreach by keywords, sequences, senders, status or date range. Does not retrieve inbound reply bodies.")]
     public Task<SearchOutreachEmailsResponse> SearchOutreachEmails([ActionParameter] SearchOutreachEmailsRequest input)
     {
         var (filters, limit) = EmailMapping.Validate(input);
         return Client.SearchEmailsAsync(filters, limit);
     }
-    [Action("Get email content", Description = "Retrieve sent outbound email content by message IDs, in batches of ten. Unavailable IDs stay in place. Does not return drafts or inbound replies.")]
+    [Action("Get email content", Description = "Retrieve sent outbound email content by message IDs in batches of ten. Preserve unavailable input positions; drafts and inbound replies are excluded.")]
     public async Task<GetEmailContentResponse> GetEmailContent([ActionParameter] GetEmailContentRequest input)
     {
         var (ids, format) = EmailMapping.ValidateContent(input);
