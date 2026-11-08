@@ -1,0 +1,15 @@
+name: Build and offline tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet build Apollo.sln --configuration Release
+      - run: dotnet test Apollo.sln --configuration Release --no-build --filter "TestCategory=Offline"
+# Live tests use the developer's local credentials and are never run by this workflow.

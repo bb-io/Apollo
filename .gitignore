@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.vs/
+.vscode/
+**/appsettings.json
+**/TestResults/
+*.user
+*.suo
+.env
+*.zip
