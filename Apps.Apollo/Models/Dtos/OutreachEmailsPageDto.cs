@@ -1,0 +1,10 @@
+using Apps.Apollo.Models.Responses;
+using Newtonsoft.Json;
+
+namespace Apps.Apollo.Models.Dtos;
+
+public class OutreachEmailsPageDto : PageDto
+{
+    [JsonProperty("emailer_messages")]
+    public List<OutreachEmailResponse> Emails { get; set; } = [];
+}

@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apps.Apollo", "Apps.Apollo\Apps.Apollo.csproj", "{818A3806-3EC4-4995-B3CC-B4CC70547449}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.Apollo", "Tests.Apollo\Tests.Apollo.csproj", "{7259BBA4-FDAB-4CB7-B617-CA480D85379B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{818A3806-3EC4-4995-B3CC-B4CC70547449}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{818A3806-3EC4-4995-B3CC-B4CC70547449}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{818A3806-3EC4-4995-B3CC-B4CC70547449}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{818A3806-3EC4-4995-B3CC-B4CC70547449}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7259BBA4-FDAB-4CB7-B617-CA480D85379B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7259BBA4-FDAB-4CB7-B617-CA480D85379B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7259BBA4-FDAB-4CB7-B617-CA480D85379B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7259BBA4-FDAB-4CB7-B617-CA480D85379B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
