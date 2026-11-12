@@ -1,75 +1,128 @@
-using System.Diagnostics;
 using System.Net;
-using System.Net.Http.Headers;
 using Apps.Apollo.Constants;
+using Apps.Apollo.Models.Dtos;
 using Blackbird.Applications.Sdk.Common.Authentication;
 using Blackbird.Applications.Sdk.Common.Exceptions;
+using Blackbird.Applications.Sdk.Utils.Extensions.Sdk;
 using Blackbird.Applications.Sdk.Utils.RestSharp;
-using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 using Polly;
+using Polly.Retry;
 using RestSharp;
+
 namespace Apps.Apollo.Api;
-public partial class ApolloClient : BlackBirdRestClient
+
+public class ApolloClient : BlackBirdRestClient
 {
-    public ApolloClient(IEnumerable<AuthenticationCredentialsProvider> credentials) : base(new RestClientOptions
-        { BaseUrl = new Uri("https://api.apollo.io/api/v1/"), Timeout = TimeSpan.FromSeconds(60) })
+    private const int MaxRateLimitRetries = 3;
+    private const int MaxPages = 500;
+    private const int DefaultPageSize = 100;
+    private const int MaxErrorMessageLength = 300;
+
+    private static readonly AsyncRetryPolicy<RestResponse> RateLimitPolicy = Policy
+        .HandleResult<RestResponse>(x => x.StatusCode == HttpStatusCode.TooManyRequests)
+        .WaitAndRetryAsync(
+            MaxRateLimitRetries,
+            (attempt, result, _) => GetRetryDelay(result.Result, attempt),
+            (_, _, _, _) => Task.CompletedTask);
+
+    public ApolloClient(IEnumerable<AuthenticationCredentialsProvider> creds) : base(new RestClientOptions
     {
-        var key = credentials.FirstOrDefault(x => x.KeyName == CredsNames.ApiKey)?.Value;
-        if (string.IsNullOrWhiteSpace(key)) throw new PluginMisconfigurationException("Enter an Apollo API key in the connection.");
-        this.AddDefaultHeader("x-api-key", key.Trim());
-        this.AddDefaultHeader("Accept", "application/json");
+        BaseUrl = new Uri("https://api.apollo.io/api/v1/"),
+        Timeout = TimeSpan.FromSeconds(60)
+    })
+    {
+        this.AddDefaultHeader("x-api-key", creds.Get(CredsNames.ApiKey).Value.Trim());
     }
+
     public override async Task<RestResponse> ExecuteWithErrorHandling(RestRequest request)
     {
-        var clock = Stopwatch.StartNew();
-        var policy = Policy.HandleResult<RestResponse>(r => r.StatusCode == HttpStatusCode.TooManyRequests)
-            .WaitAndRetryAsync(3, (attempt, result, _) =>
-            {
-                var delay = RetryDelay(result.Result, attempt);
-                if (clock.Elapsed + delay > TimeSpan.FromSeconds(90)) throw CreateException(result.Result);
-                return delay;
-            }, (_, _, _, _) => Task.CompletedTask);
-        var response = await policy.ExecuteAsync(() => ExecuteAsync(request));
-        if (!response.IsSuccessStatusCode) throw CreateException(response);
+        var response = await RateLimitPolicy.ExecuteAsync(() => ExecuteAsync(request));
+
+        if (!response.IsSuccessStatusCode)
+            throw ConfigureErrorException(response);
+
         return response;
     }
-    private static TimeSpan RetryDelay(RestResponse response, int attempt)
+
+    public async Task<PaginatedResult<T>> Paginate<TPage, T>(
+        Func<int, int, RestRequest> createPageRequest,
+        Func<TPage, IEnumerable<T>?> getPageItems,
+        int maximumResults,
+        int maxPageSize = DefaultPageSize) where TPage : PageDto
     {
-        var header = response.Headers?.FirstOrDefault(h => string.Equals(h.Name, "Retry-After", StringComparison.OrdinalIgnoreCase))?.Value?.ToString();
-        if (RetryConditionHeaderValue.TryParse(header, out var parsed))
-            return parsed.Delta ?? (parsed.Date > DateTimeOffset.UtcNow ? parsed.Date.Value - DateTimeOffset.UtcNow : TimeSpan.Zero);
-        try
+        var pageSize = Math.Min(maxPageSize, maximumResults);
+        var items = new List<T>();
+        long? totalEntries = null;
+
+        for (var page = 1; page <= MaxPages && items.Count < maximumResults; page++)
         {
-            var error = JObject.Parse(response.Content ?? "{}")["error_details"];
-            if (error?["code"]?.ToString() == "USAGE.RATE_LIMIT.PLATFORM_RATE_LIMIT")
-            {
-                var seconds = error["suggestions"]?.Children().Select(x => (double?)x["retry_after_seconds"]).FirstOrDefault(x => x.HasValue);
-                return TimeSpan.FromSeconds(Math.Max(0, seconds ?? 60));
-            }
+            var pageResponse = await ExecuteWithErrorHandling<TPage>(createPageRequest(page, pageSize));
+            var pageItems = getPageItems(pageResponse)?.ToList() ?? [];
+
+            totalEntries = pageResponse.Pagination?.TotalEntries;
+            items.AddRange(pageItems.Take(maximumResults - items.Count));
+
+            if (IsLastPage(pageResponse.Pagination, page, pageItems.Count, pageSize))
+                break;
         }
-        catch (Newtonsoft.Json.JsonException) { }
-        return TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)) + TimeSpan.FromMilliseconds(Random.Shared.Next(500));
+
+        return new(items, totalEntries);
     }
-    public Exception CreateException(RestResponse response) => ConfigureErrorException(response);
+
     protected override Exception ConfigureErrorException(RestResponse response)
     {
-        string? message = null, code = null;
+        var message = GetErrorMessage(response);
+
+        return response.StatusCode is HttpStatusCode.BadRequest
+            or HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden
+            or HttpStatusCode.NotFound
+            or HttpStatusCode.UnprocessableEntity
+            ? new PluginMisconfigurationException(message)
+            : new PluginApplicationException(message);
+    }
+
+    private static bool IsLastPage(PaginationDto? pagination, int page, int pageItemCount, int pageSize)
+    {
+        return pagination?.TotalPages is { } totalPages
+            ? page >= totalPages
+            : pageItemCount < pageSize;
+    }
+
+    private static string GetErrorMessage(RestResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.Content))
+            return response.ErrorMessage ?? $"Apollo request failed with status code {(int)response.StatusCode}.";
+
+        var error = TryDeserializeError(response.Content);
+        var message = error?.ErrorDetails?.Message ?? error?.Error ?? response.Content;
+
+        return message.Length > MaxErrorMessageLength
+            ? message[..MaxErrorMessageLength] + "..."
+            : message;
+    }
+
+    private static ErrorDto? TryDeserializeError(string content)
+    {
         try
         {
-            var error = JObject.Parse(response.Content ?? "{}")["error_details"];
-            message = (string?)error?["message"]; code = (string?)error?["code"];
+            return JsonConvert.DeserializeObject<ErrorDto>(content);
         }
-        catch (Newtonsoft.Json.JsonException) { }
-        var detail = string.IsNullOrWhiteSpace(message) ? "Apollo could not complete the request." : message;
-        if (!string.IsNullOrWhiteSpace(code)) detail += $" ({code})";
-        return response.StatusCode switch
+        catch (JsonException)
         {
-            HttpStatusCode.Unauthorized => new PluginMisconfigurationException("Apollo rejected the API key. Check the connection credentials."),
-            HttpStatusCode.Forbidden => new PluginMisconfigurationException("Apollo denied access. Check the API key endpoint permissions and your plan. " + detail),
-            HttpStatusCode.BadRequest or HttpStatusCode.UnprocessableEntity => new PluginMisconfigurationException("Check the action inputs. " + detail),
-            HttpStatusCode.NotFound => new PluginMisconfigurationException("Apollo could not find the requested resource. Check its ID. " + detail),
-            HttpStatusCode.TooManyRequests => new PluginApplicationException("Apollo's rate limit was reached. Retry this Flight later. " + detail),
-            _ => new PluginApplicationException($"Apollo request failed (HTTP {(int)response.StatusCode}). " + detail)
-        };
+            return null;
+        }
+    }
+
+    private static TimeSpan GetRetryDelay(RestResponse response, int attempt)
+    {
+        var retryAfter = response.Headers?
+            .FirstOrDefault(x => string.Equals(x.Name, "Retry-After", StringComparison.OrdinalIgnoreCase))?
+            .Value?.ToString();
+
+        return int.TryParse(retryAfter, out var seconds)
+            ? TimeSpan.FromSeconds(seconds)
+            : TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(Random.Shared.Next(500));
     }
 }

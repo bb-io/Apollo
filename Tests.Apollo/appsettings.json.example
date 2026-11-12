@@ -1,1 +1,5 @@
-{"ConnectionDefinition":{"api_key":""},"TestPerson":{"Email":"","PersonId":"","ExpectedPersonId":""}}
+{
+  "ConnectionDefinition": {
+    "api_key": "Get from Apollo: Settings > Integrations > API keys"
+  }
+}
